@@ -6,7 +6,6 @@ using System.IO;
 using Microsoft.Rest.Generator.ClientModel;
 using Microsoft.Rest.Generator.Extensibility;
 using Microsoft.Rest.Generator.Logging;
-using Microsoft.Rest.Generator.Properties;
 using Microsoft.Rest.Generator.Test.Resource;
 using Microsoft.Rest.Generator.Utilities;
 using Xunit;
@@ -69,11 +68,11 @@ namespace Microsoft.Rest.Generator.Test
         public void NullOrEmptyAutoRestSettings()
         {
             Assert.Throws<ArgumentNullException>(() => ExtensionsLoader.GetCodeGenerator(null));
-            Assert.Throws<ArgumentNullException>(() => ExtensionsLoader.GetCodeGenerator(
+            Assert.Throws<ArgumentException>(() => ExtensionsLoader.GetCodeGenerator(
                 new Settings {CodeGenerator = string.Empty, FileSystem = _fileSystem}));
 
             Assert.Throws<ArgumentNullException>(() => ExtensionsLoader.GetModeler(null));
-            Assert.Throws<ArgumentNullException>(() => ExtensionsLoader.GetModeler(
+            Assert.Throws<ArgumentException>(() => ExtensionsLoader.GetModeler(
                 new Settings {Modeler = string.Empty, FileSystem = _fileSystem}));
         }
 
@@ -135,7 +134,8 @@ namespace Microsoft.Rest.Generator.Test
             source.Name = "Foo";
             source.Methods.Add(new Method
             {
-                Documentation = "Create or update a cache.",
+                Description = "Create or update a cache.",
+                Summary = "Some summary",
                 Name = "CreateOrUpdate",
                 Url = "/subscription/{subscriptionId}/start/{startDate}"
             });

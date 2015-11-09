@@ -42,20 +42,32 @@ function gulpRegenerateExpected(options, done) {
     gutil.log('opts.nsPrefix not set, so setting it to "Fixtures"');
   }
 
+  if(!opts.flatteningThreshold){
+    opts.flatteningThreshold = "0";
+    gutil.log('opts.flatteningThreshold not set, so setting it to "0"');
+  }
+
   var promises = Object.keys(opts.mappings).map(function(key) {
     var cmd = 'mono';
+    var optsMappingsValue = opts.mappings[key];
+    var mappingBaseDir = optsMappingsValue instanceof Array ? optsMappingsValue[0] : optsMappingsValue;
     var args = [
       'binaries/net45/AutoRest.exe',
       '-Modeler', opts.modeler,
       '-CodeGenerator', opts.codeGenerator,
+      '-PayloadFlatteningThreshold', opts.flatteningThreshold,
       '-OutputDirectory', path.join(opts.outputDir, key),
-      '-Input', (!!opts.inputBaseDir ? path.join(opts.inputBaseDir, opts.mappings[key]) : opts.mappings[key]),
+      '-Input', (!!opts.inputBaseDir ? path.join(opts.inputBaseDir, mappingBaseDir) : mappingBaseDir),
       '-Header', (!!opts.header ? opts.header : 'MICROSOFT_MIT')
     ];
 
-    if(!!opts.nsPrefix) {
+    if (!!opts.nsPrefix) {
       args.push('-Namespace');
-      args.push([opts.nsPrefix, key.replace(/\/|\./, '')].join('.'));
+      if (optsMappingsValue instanceof Array && optsMappingsValue[1] !== undefined) {
+          args.push(optsMappingsValue[1]);
+	  }else{
+		args.push([opts.nsPrefix, key.replace(/\/|\./, '')].join('.'));
+	  }
     }
 
     var isWin = /^win/.test(process.platform);

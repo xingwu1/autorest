@@ -2,11 +2,13 @@
 // Licensed under the MIT License. See License.txt in the project root for license information.
 
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.Rest.Generator.ClientModel;
-using Microsoft.Rest.Generator.NodeJS.TemplateModels;
 using Microsoft.Rest.Generator.Utilities;
-using System.Globalization;
+using System.Text;
+using Microsoft.Rest.Generator.NodeJS.TemplateModels;
+using System;
 
 namespace Microsoft.Rest.Generator.NodeJS
 {
@@ -26,6 +28,58 @@ namespace Microsoft.Rest.Generator.NodeJS
         public List<MethodTemplateModel> MethodTemplateModels { get; private set; }
 
         public List<ModelTemplateModel> ModelTemplateModels { get; private set; }
+
+        /// <summary>
+        /// Provides an ordered ModelTemplateModel list such that the parent 
+        /// type comes before in the list than its child. This helps when 
+        /// requiring models in index.js
+        /// </summary>
+        public List<ModelTemplateModel> OrderedModelTemplateModels 
+        {
+            get
+            {
+                List<ModelTemplateModel> orderedList = new List<ModelTemplateModel>();
+                foreach (var model in ModelTemplateModels)
+                {
+                    constructOrderedList(model, orderedList);
+                }
+                return orderedList;
+            }
+        }
+
+        private void constructOrderedList(ModelTemplateModel model, List<ModelTemplateModel> orderedList)
+        {
+            if (model == null)
+            {
+                throw new ArgumentNullException("model");
+            }
+
+            // BaseResource and CloudError are specified in the ClientRuntime. 
+            // They are required explicitly in a different way. Hence, they
+            // are not included in the ordered list.
+            if (model.BaseModelType == null ||
+                (model.BaseModelType != null && 
+                 (model.BaseModelType.Name == "BaseResource" || 
+                  model.BaseModelType.Name == "CloudError")))
+            {
+                if (!orderedList.Contains(model))
+                {
+                    orderedList.Add(model);
+                }
+                return;
+            }
+
+            var baseModel = ModelTemplateModels.FirstOrDefault(m => m.Name == model.BaseModelType.Name);
+            if (baseModel != null)
+            {
+                constructOrderedList(baseModel, orderedList);
+            }
+            // Add the child type after the parent type has been added.
+            if (!orderedList.Contains(model))
+            {
+                orderedList.Add(model);
+            }
+        }
 
         public virtual IEnumerable<MethodGroupTemplateModel> MethodGroupModels
         {
@@ -72,6 +126,45 @@ namespace Microsoft.Rest.Generator.NodeJS
                     .ForEach(p => requireParams.Add(p.Name.ToCamelCase()));
                 requireParams.Add("baseUri");
                 return string.Join(", ", requireParams);
+            }
+        }
+
+        /// <summary>
+        /// Return the service client constructor required parameters, in TypeScript syntax.
+        /// </summary>
+        public string RequiredConstructorParametersTS {
+            get {
+                StringBuilder requiredParams = new StringBuilder();
+
+                bool first = true;
+                foreach (var p in this.Properties) {
+                    if (! p.IsRequired)
+                        continue;
+
+                    if (!first)
+                        requiredParams.Append(", ");
+
+                    requiredParams.Append(p.Name);
+                    requiredParams.Append(": ");
+                    requiredParams.Append(p.Type.TSType(false));
+
+                    first = false;
+                }
+
+                if (!first)
+                    requiredParams.Append(", ");
+
+                requiredParams.Append("baseUri: string");
+                return requiredParams.ToString();
+            }
+        }
+
+        public bool ContainsTimeSpan
+        {
+            get
+            {
+                return this.Methods.FirstOrDefault(
+                    m => m.Parameters.FirstOrDefault(p => p.Type == PrimaryType.TimeSpan) != null) != null;
             }
         }
     }

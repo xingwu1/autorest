@@ -38,18 +38,25 @@ namespace Microsoft.Rest.Generator.Ruby
         }
 
         /// <summary>
-        /// Gets the list of properties of object including inherted ones.
+        /// Gets the list of modules/classes which need to be included.
         /// </summary>
-        public IEnumerable<Property> ComposedProperties
+        public virtual List<string> Includes
         {
             get
             {
-                if (this.parent != null)
-                {
-                    return parent.ComposedProperties.Union(this.Properties);
-                }
+                return new List<string>();
+            }
+        }
 
-                return this.Properties;
+        /// <summary>
+        /// Gets the list of namespaces where we look for classes that need to
+        /// be instantiated dynamically due to polymorphism.
+        /// </summary>
+        public virtual List<string> ClassNamespaces
+        {
+            get
+            {
+                return new List<string> {};
             }
         }
 
@@ -75,11 +82,26 @@ namespace Microsoft.Rest.Generator.Ruby
         }
 
         /// <summary>
+        /// Gets the polymorphic discriminator to use for the current object, or its parent's if it doesn't have one.
+        /// </summary>
+        public string PolymorphicDiscriminatorProperty
+        {
+            get 
+            {
+                if (string.IsNullOrEmpty(this.PolymorphicDiscriminator) && this.parent != null)
+                {
+                    return this.parent.PolymorphicDiscriminatorProperty;
+                }
+
+                return this.PolymorphicDiscriminator;
+            }
+        }
+
+        /// <summary>
         /// Initializes a new instance of the ModelTemplateModel class.
         /// </summary>
         /// <param name="source">The object to create model from.</param>
-        /// <param name="serviceClient">The service client.</param>
-        public ModelTemplateModel(CompositeType source, ServiceClient serviceClient)
+        public ModelTemplateModel(CompositeType source)
         {
             this.LoadFrom(source);
             PropertyTemplateModels = new List<PropertyTemplateModel>();
@@ -87,7 +109,7 @@ namespace Microsoft.Rest.Generator.Ruby
 
             if (source.BaseModelType != null)
             {
-                parent = new ModelTemplateModel(source.BaseModelType, serviceClient);
+                parent = new ModelTemplateModel(source.BaseModelType);
             }
         }
 
@@ -96,21 +118,15 @@ namespace Microsoft.Rest.Generator.Ruby
         /// </summary>
         /// <param name="variableName">Variable serialize model from.</param>
         /// <param name="type">The type of the model.</param>
-        /// <param name="isRequired">Is property required.</param>
-        /// <param name="defaultNamespace">The namespace.</param>
         /// <returns>The code for serialization in string format.</returns>
-        public string SerializeProperty(string variableName, IType type, bool isRequired, string defaultNamespace)
+        public virtual string SerializeProperty(string variableName, IType type)
         {
-            // TODO: handle if property required via "unless serialized_property.nil?"
-
             var builder = new IndentedStringBuilder("  ");
 
-            string serializationLogic = type.SerializeType(this.Scope, variableName, defaultNamespace);
-
+            string serializationLogic = type.SerializeType(this.Scope, variableName, ClassNamespaces);
             builder.AppendLine(serializationLogic);
 
             return builder.ToString();
-            // return builder.AppendLine("{0} = JSON.generate({0}, quirks_mode: true)", variableName).ToString();
         }
 
         /// <summary>
@@ -118,18 +134,12 @@ namespace Microsoft.Rest.Generator.Ruby
         /// </summary>
         /// <param name="variableName">Variable deserialize model from.</param>
         /// <param name="type">The type of the model.</param>
-        /// <param name="isRequired">Is property required.</param>
-        /// <param name="defaultNamespace">The namespace.</param>
         /// <returns>The code for вуserialization in string format.</returns>
-        public string DeserializeProperty(string variableName, IType type, bool isRequired, string defaultNamespace)
+        public virtual string DeserializeProperty(string variableName, IType type)
         {
-            // TODO: handle required property via "unless deserialized_property.nil?"
-
             var builder = new IndentedStringBuilder("  ");
 
-            // builder.AppendLine("{0} = JSON.load({0}) unless {0}.to_s.empty?", variableName);
-
-            string serializationLogic = type.DeserializeType(this.Scope, variableName, defaultNamespace);
+            string serializationLogic = type.DeserializeType(this.Scope, variableName, ClassNamespaces);
             return builder.AppendLine(serializationLogic).ToString();
         }
 

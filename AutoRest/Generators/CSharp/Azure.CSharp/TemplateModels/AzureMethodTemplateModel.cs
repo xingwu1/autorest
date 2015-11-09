@@ -3,13 +3,14 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Net;
 using Microsoft.Rest.Generator.Azure;
 using Microsoft.Rest.Generator.ClientModel;
 using Microsoft.Rest.Generator.CSharp.Azure.Properties;
 using Microsoft.Rest.Generator.CSharp.TemplateModels;
 using Microsoft.Rest.Generator.Utilities;
-using System.Globalization;
 
 namespace Microsoft.Rest.Generator.CSharp.Azure
 {
@@ -24,13 +25,21 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
             }
 
             ParameterTemplateModels.Clear();
+            LogicalParameterTemplateModels.Clear();
             source.Parameters.ForEach(p => ParameterTemplateModels.Add(new AzureParameterTemplateModel(p)));
-
+            source.LogicalParameters.ForEach(p => LogicalParameterTemplateModels.Add(new AzureParameterTemplateModel(p)));
             if (MethodGroupName != ServiceClient.Name)
             {
                 MethodGroupName = MethodGroupName + "Operations";
             }
+
+            this.ClientRequestIdString = AzureCodeGenerator.GetClientRequestIdString(source);
+            this.RequestIdString = AzureCodeGenerator.GetRequestIdString(source);
         }
+
+        public string ClientRequestIdString { get; private set; }
+
+        public string RequestIdString { get; private set; }
 
         public AzureMethodTemplateModel GetMethod
         {
@@ -73,6 +82,23 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
             get { return Extensions.ContainsKey(AzureCodeGenerator.LongRunningExtension); }
         }
 
+        private string ReturnTypePageInterfaceName
+        {
+            get
+            {
+                if (ReturnType is CompositeType)
+                {
+                    // Special handle Page class with IPage interface
+                    CompositeType compositeType = ReturnType as CompositeType;
+                    if (compositeType.Extensions.ContainsKey(AzureCodeGenerator.PageableExtension))
+                    {
+                        return (string)compositeType.Extensions[AzureCodeGenerator.PageableExtension];
+                    }
+                }
+                return null;
+            }
+        }
+
         /// <summary>
         /// Returns AzureOperationResponse generic type declaration.
         /// </summary>
@@ -82,6 +108,11 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
             {
                 if (ReturnType != null)
                 {
+                    if (!string.IsNullOrEmpty(ReturnTypePageInterfaceName))
+                    {
+                        return string.Format(CultureInfo.InvariantCulture,
+                            "AzureOperationResponse<{0}>", ReturnTypePageInterfaceName);
+                    }
                     return string.Format(CultureInfo.InvariantCulture,
                         "AzureOperationResponse<{0}>", ReturnType.Name);
                 }
@@ -89,6 +120,33 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
                 {
                     return "AzureOperationResponse";
                 }
+            }
+        }
+
+        /// <summary>
+        /// Get the type name for the method's return type
+        /// </summary>
+        public override string ReturnTypeString
+        {
+            get
+            {
+                return ReturnTypePageInterfaceName ?? base.ReturnTypeString;
+            }
+        }
+
+        /// <summary>
+        /// Get the return type for the async extension method
+        /// </summary>
+        public override string TaskExtensionReturnTypeString
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(ReturnTypePageInterfaceName))
+                {
+                    return string.Format(CultureInfo.InvariantCulture,
+                        "Task<{0}>", ReturnTypePageInterfaceName);
+                }
+                return base.TaskExtensionReturnTypeString;
             }
         }
 
@@ -119,11 +177,12 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
                 if (this.HttpMethod == HttpMethod.Head &&
                     this.ReturnType != null)
                 {
-                     sb.AppendLine("result.Body = (statusCode == HttpStatusCode.NoContent);");
+                    HttpStatusCode code = this.Responses.Keys.FirstOrDefault(AzureCodeGenerator.HttpHeadStatusCodeSuccessFunc);
+                    sb.AppendFormat("result.Body = (statusCode == HttpStatusCode.{0});", code.ToString()).AppendLine();
                 }
-                sb.AppendLine("if (httpResponse.Headers.Contains(\"x-ms-request-id\"))")
+                sb.AppendLine("if (httpResponse.Headers.Contains(\"{0}\"))", this.RequestIdString)
                     .AppendLine("{").Indent()
-                        .AppendLine("result.RequestId = httpResponse.Headers.GetValues(\"x-ms-request-id\").FirstOrDefault();").Outdent()
+                        .AppendLine("result.RequestId = httpResponse.Headers.GetValues(\"{0}\").FirstOrDefault();", this.RequestIdString).Outdent()
                     .AppendLine("}")
                     .AppendLine(base.InitializeResponseBody);
                 return sb.ToString();
@@ -138,7 +197,7 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
             get
             {
                 var sb= new IndentedStringBuilder();
-                sb.AppendLine("httpRequest.Headers.TryAddWithoutValidation(\"x-ms-client-request-id\", Guid.NewGuid().ToString());")
+                sb.AppendLine("httpRequest.Headers.TryAddWithoutValidation(\"{0}\", Guid.NewGuid().ToString());", this.ClientRequestIdString)
                   .AppendLine(base.SetDefaultHeaders);
                 return sb.ToString();
             }
@@ -181,9 +240,9 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
         private void AddQueryParametersToUri(string variableName, IndentedStringBuilder builder)
         {
             builder.AppendLine("List<string> queryParameters = new List<string>();");
-            if (ParameterTemplateModels.Any(p => p.Location == ParameterLocation.Query))
+            if (LogicalParameters.Any(p => p.Location == ParameterLocation.Query))
             {
-                foreach (var queryParameter in ParameterTemplateModels
+                foreach (var queryParameter in LogicalParameters
                     .Where(p => p.Location == ParameterLocation.Query))
                 {
                     string queryParametersAddString =
@@ -218,7 +277,7 @@ namespace Microsoft.Rest.Generator.CSharp.Azure
 
         private void ReplacePathParametersInUri(string variableName, IndentedStringBuilder builder)
         {
-            foreach (var pathParameter in ParameterTemplateModels.Where(p => p.Location == ParameterLocation.Path))
+            foreach (var pathParameter in LogicalParameters.Where(p => p.Location == ParameterLocation.Path))
             {
                 string replaceString = "{0} = {0}.Replace(\"{{{1}}}\", Uri.EscapeDataString({2}));";
                 if (pathParameter.Extensions.ContainsKey(AzureCodeGenerator.SkipUrlEncodingExtension))

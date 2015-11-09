@@ -1,19 +1,27 @@
-require 'rspec'
-require_relative 'Head/sdk_requirements'
+# encoding: utf-8
 
-include MyNamespace
+$: << 'RspecTests/Generated/head'
+
+require 'rspec'
+require 'head'
+
+include HeadModule
 
 describe 'Head' do
   before(:all) do
     @base_url = ENV['StubServerURI']
 
     dummyToken = 'dummy12321343423'
-    dummySubscription = '1-1-1-1'
-    @credentials = MsRestAzure::TokenCloudCredentials.new(dummySubscription, dummyToken)
+    @credentials = MsRest::TokenCredentials.new(dummyToken)
 
     @client = AutoRestHeadTestService.new(@credentials, @base_url)
   end
 
+  it 'send head 200' do
+    result = @client.http_success.head200().value!
+    expect(result.body).to be(true)
+  end
+  
   it 'send head 204' do
     result = @client.http_success.head204().value!
     expect(result.body).to be(true)

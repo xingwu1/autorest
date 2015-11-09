@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using Microsoft.Rest.Generator;
 using Microsoft.Rest.Generator.ClientModel;
@@ -12,8 +13,6 @@ using Microsoft.Rest.Generator.Utilities;
 using Microsoft.Rest.Modeler.Swagger.Model;
 using ParameterLocation = Microsoft.Rest.Modeler.Swagger.Model.ParameterLocation;
 using Resources = Microsoft.Rest.Modeler.Swagger.Properties.Resources;
-using System.Globalization;
-using System.Text;
 
 namespace Microsoft.Rest.Modeler.Swagger
 {
@@ -58,8 +57,10 @@ namespace Microsoft.Rest.Modeler.Swagger
         /// Builds service model from swagger file.
         /// </summary>
         /// <returns></returns>
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling")]
         public override ServiceClient Build()
         {
+            PrimaryType.Reset();
             Logger.LogInfo(Resources.ParsingSwagger);
             ServiceDefinition = SwaggerParser.Load(Settings.Input, Settings.FileSystem);
             Logger.LogInfo(Resources.GeneratingClient);
@@ -86,7 +87,7 @@ namespace Microsoft.Rest.Modeler.Swagger
                     if (string.IsNullOrWhiteSpace(operation.OperationId))
                     {
                         throw ErrorManager.CreateError(
-                            string.Format(CultureInfo.InvariantCulture, 
+                            string.Format(CultureInfo.InvariantCulture,
                                 Resources.OperationIdMissing,
                                 verb,
                                 path.Key));
@@ -119,7 +120,52 @@ namespace Microsoft.Rest.Modeler.Swagger
                 ServiceClient.ModelTypes.Add(objectType);
             }
 
+            // Flatten request payload
+            foreach (var method in ServiceClient.Methods)
+            {
+                FlattenRequestPayload(method);
+            }
+
             return ServiceClient;
+        }
+
+        /// <summary>
+        /// Flattens the request payload if the number of properties of the 
+        /// payload is less than or equal to the PayloadFlatteningThreshold.
+        /// </summary>
+        /// <param name="method">Method to process</param>
+        private void FlattenRequestPayload(Method method)
+        {
+            var bodyParameter = method.Parameters.FirstOrDefault(
+                p => p.Location == Generator.ClientModel.ParameterLocation.Body);
+
+            if (bodyParameter != null)
+            {
+                var bodyParameterType = bodyParameter.Type as CompositeType;
+                if (bodyParameterType != null && bodyParameterType.ComposedProperties.Count() <= Settings.PayloadFlatteningThreshold)
+                {
+                    var parameterTransformation = new ParameterTransformation
+                    {
+                        OutputParameter = bodyParameter
+                    };
+                    method.InputParameterTransformation.Add(parameterTransformation);
+
+                    foreach (var property in bodyParameterType.ComposedProperties)
+                    {
+                        var newMethodParameter = new Parameter();
+                        newMethodParameter.LoadFrom(property);
+                        method.Parameters.Add(newMethodParameter);
+
+                        parameterTransformation.ParameterMappings.Add(new ParameterMapping
+                        {
+                            InputParameter = newMethodParameter,
+                            OutputParameterProperty = property.Name
+                        });                        
+                    }
+
+                    method.Parameters.Remove(bodyParameter);
+                }
+            }
         }
 
         /// <summary>
@@ -163,7 +209,7 @@ namespace Microsoft.Rest.Modeler.Swagger
             {
                 ServiceDefinition.Host = "localhost";
             }
-            ServiceClient.BaseUrl = string.Format(CultureInfo.InvariantCulture, "{0}://{1}{2}", 
+            ServiceClient.BaseUrl = string.Format(CultureInfo.InvariantCulture, "{0}://{1}{2}",
                 ServiceDefinition.Schemes[0].ToString().ToLower(CultureInfo.InvariantCulture),
                 ServiceDefinition.Host, ServiceDefinition.BasePath);
         }
@@ -304,7 +350,7 @@ namespace Microsoft.Rest.Modeler.Swagger
                 if (!ServiceDefinition.Parameters.ContainsKey(referenceKey))
                 {
                     throw new ArgumentException(
-                        string.Format(CultureInfo.InvariantCulture, 
+                        string.Format(CultureInfo.InvariantCulture,
                         Resources.DefinitionDoesNotExist, referenceKey));
                 }
 

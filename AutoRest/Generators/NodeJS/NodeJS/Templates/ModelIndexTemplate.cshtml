@@ -3,7 +3,9 @@
 @using Microsoft.Rest.Generator.Utilities
 @using System.Linq
 @inherits Microsoft.Rest.Generator.Template<Microsoft.Rest.Generator.NodeJS.ServiceClientTemplateModel>
-@Header("// ")
+/*
+@Header(" * ")
+ */
 @EmptyLine
 /* jshint latedef:false */
 /* jshint forin:false */
@@ -11,7 +13,7 @@
 @EmptyLine
 'use strict';
 @EmptyLine
-@foreach (var model in Model.ModelTemplateModels)
+@foreach (var model in Model.OrderedModelTemplateModels)
 {
 @:exports.@model.Name = require('./@model.Name.ToCamelCase()');
 }

@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -28,9 +30,16 @@ namespace Microsoft.Rest.Generator.Extensibility
         public static CodeGenerator GetCodeGenerator(Settings settings)
         {
             Logger.LogInfo(Resources.InitializingCodeGenerator);
-            if (settings == null || string.IsNullOrEmpty(settings.CodeGenerator))
+            if (settings == null)
             {
                 throw new ArgumentNullException("settings");
+            }
+
+            if (string.IsNullOrEmpty(settings.CodeGenerator))
+            {
+                throw new ArgumentException(
+                    string.Format(CultureInfo.InvariantCulture, 
+                        Resources.ParameterValueIsMissing, "CodeGenerator"));
             }
 
             CodeGenerator codeGenerator = null;
@@ -44,6 +53,8 @@ namespace Microsoft.Rest.Generator.Extensibility
                     var config = JsonConvert.DeserializeObject<AutoRestConfiguration>(configurationFile);
                     codeGenerator = LoadTypeFromAssembly<CodeGenerator>(config.CodeGenerators, settings.CodeGenerator,
                         settings);
+                    Settings.PopulateSettings(codeGenerator, settings.CustomSettings).ForEach(kv => settings.CustomSettings[kv.Key] = kv.Value);
+
                 }
                 catch (Exception ex)
                 {
@@ -68,9 +79,16 @@ namespace Microsoft.Rest.Generator.Extensibility
         public static Modeler GetModeler(Settings settings)
         {
             Logger.LogInfo(Resources.ModelerInitialized);
-            if (settings == null || string.IsNullOrEmpty(settings.Modeler))
+            if (settings == null)
             {
                 throw new ArgumentNullException("settings", "settings or settings.Modeler cannot be null.");
+            }
+
+            if (string.IsNullOrEmpty(settings.Modeler))
+            {
+                throw new ArgumentException(
+                    string.Format(CultureInfo.InvariantCulture,
+                        Resources.ParameterValueIsMissing, "Modeler"));
             }
 
             Modeler modeler = null;
@@ -83,6 +101,7 @@ namespace Microsoft.Rest.Generator.Extensibility
                 {
                     var config = JsonConvert.DeserializeObject<AutoRestConfiguration>(configurationFile);
                     modeler = LoadTypeFromAssembly<Modeler>(config.Modelers, settings.Modeler, settings);
+                    Settings.PopulateSettings(modeler, settings.CustomSettings).ForEach(kv => settings.CustomSettings[kv.Key] = kv.Value);
                 }
                 catch (Exception ex)
                 {
@@ -121,6 +140,7 @@ namespace Microsoft.Rest.Generator.Extensibility
             return settings.FileSystem.ReadFileAsText(path);
         }
 
+        [SuppressMessage("Microsoft.Reliability", "CA2001:AvoidCallingProblematicMethods", MessageId = "System.Reflection.Assembly.LoadFrom")]
         private static T LoadTypeFromAssembly<T>(IDictionary<string, AutoRestProviderConfiguration> section,
             string key, Settings settings)
         {
@@ -144,7 +164,20 @@ namespace Microsoft.Rest.Generator.Extensibility
 
                 try
                 {
-                    Assembly loadedAssembly = Assembly.Load(assemblyName);
+                    Assembly loadedAssembly;
+                    try
+                    {
+                        loadedAssembly = Assembly.Load(assemblyName);
+                    }
+                    catch(FileNotFoundException)
+                    {
+                        loadedAssembly = Assembly.LoadFrom(assemblyName + ".dll");
+                        if(loadedAssembly == null)
+                        {
+                            throw;
+                        }
+                    }
+
                     Type loadedType = loadedAssembly.GetTypes()
                         .Single(t => string.IsNullOrEmpty(typeName) ||
                                      t.Name == typeName ||
