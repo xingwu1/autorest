@@ -176,3 +176,9 @@ AutoRest/Generators/Ruby/*/RspecTests/Generated/*
 dnx-clr-win-x86*/
 dnx-coreclr-win-x86*/
 *.pyc
+
+#tox directory
+*.tox
+
+#python code coverage
+*.coverage
